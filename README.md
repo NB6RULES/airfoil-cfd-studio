@@ -1,4 +1,4 @@
-# ✈️ Airfoil CFD Studio (2D Aerodynamics & Flow Visualizer)
+# 🏎️ Airfoil CFD Studio (2D Aerodynamics, Motorsport & CAD)
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.30%2B-FF4B4B.svg)](https://streamlit.io/)
@@ -6,41 +6,37 @@
 [![SciPy](https://img.shields.io/badge/SciPy-Aerodynamics-8CAAE6.svg)](https://scipy.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-An interactive, production-ready 2D Airfoil Aerodynamics & CFD Flow Field Visualizer built with Streamlit, NumPy, SciPy, and Matplotlib. 
+An interactive, high-speed 2D Airfoil Aerodynamics & CFD Flow Field Visualizer built with Streamlit, NumPy, SciPy, and Matplotlib. Engineered for high rendering responsiveness on **Streamlit Community Cloud**, with dedicated features for aeronautics, motorsport aerodynamics, and CAD / 3D printing.
 
-The application is completely self-contained with no external CFD solver binaries (no OpenFOAM or XFOIL installation required), allowing instant deployment to **Streamlit Cloud**, **Hugging Face Spaces**, or local machines.
+The app is completely self-contained with no external CFD solver binaries (no OpenFOAM or XFOIL installation required).
 
 ---
 
 ## 🌟 Key Features
 
-- **NACA 4-Digit Airfoil Geometry Engine:**
-  - Full parametric control over maximum camber ($m$), camber position ($p$), and maximum thickness ($t$).
-  - Cosine clustering along chord for high leading-edge and trailing-edge resolution.
-  - Closed trailing-edge formulation.
+### ⚡ High Rendering Speed & Cloud Performance
+- **Performance / Quality Modes:**
+  - **⚡ Fast (Interactive):** 70×50 Cartesian grid with streamline density 0.6 and optimized 85 DPI rendering for instantaneous, lag-free slider adjustments.
+  - **💎 High Def:** 140×100 grid with streamline density 1.1 and 115 DPI for publication-quality flow field plots.
+- **Lazy-Loaded & Cached Polars:** Aerodynamic polars and Cartesian flow evaluations are cached with `@st.cache_data`.
+- **Zero Memory Leaks:** Systematic `plt.close('all')` execution after every render to keep browser and server memory light.
 
-- **Real-Time 2D Flow Field CFD Simulation:**
-  - High-speed 2D **Hess-Smith Boundary Element Panel Method** with exact Kutta condition enforcement.
-  - Vectorized Cartesian grid velocity evaluation with instantaneous (~50ms) rendering.
-  - Normalized velocity magnitude contours ($|\vec{V}| / U_\infty$) with customizable colormaps (`plasma`, `viridis`, `turbo`, `coolwarm`, `inferno`).
-  - Streamlines with automatic downwash deflection and physical stagnation point marking.
-  - Downstream viscous boundary layer wake momentum deficit modeling.
+### 🛩️ High-Lift Plain Flap Engine
+- **Real-Time Camber Deflection:** Articulates the trailing-edge plain flap downward ($-15^\circ$ to $+35^\circ$) around a customizable hinge point ($x_f/c \in [0.60, 0.85]$).
+- **Thin Airfoil Flap Effectiveness:** Real-time computation of flap zero-lift shift $\Delta \alpha_{0} = -\frac{\theta_f - \sin\theta_f}{\pi} \delta_f$, boosting lift coefficient ($C_l$) and profile drag ($C_d$).
 
-- **Surface Pressure Distribution ($-C_p$):**
-  - Upper and lower surface pressure coefficient line plots.
-  - Standard aeronautical convention with inverted Y-axis (suction upwards).
-  - Shaded aerodynamic normal force area ($\oint \Delta C_p \, d(x/c)$).
-  - Live computation of Center of Pressure ($x_{cp}$) and Quarter-Chord Pitching Moment ($C_{m, c/4}$).
+### 🏎️ Motorsport Downforce & Ground Effect
+- **Inverted Wing Mode:** Inverts the airfoil geometry ($y \to -y$), shifting the suction surface underneath the wing to simulate automotive rear/front wings (Formula 1, GT3, LMP, FSAE).
+- **Metric Cards for Racing:** Displays **Downforce Coefficient ($C_{df}$)**, Downforce in $\text{N/m}$, Drag in $\text{N/m}$, and Aerodynamic Downforce-to-Drag Efficiency.
+- **Ground Effect Venturi Suction:**
+  - Realistic road surface boundary plane ($y = y_{\text{road}}$) with asphalt styling and yellow track marking.
+  - Squeezes flow through the under-wing channel, accelerating flow via Venturi suction and calculating ground effect downforce amplification and ground stall limits.
 
-- **Aerodynamic Polars & Non-Linear Stall Modeling:**
-  - Viscous lift curve ($C_l$ vs $\alpha$) from $-10^\circ$ to $+20^\circ$.
-  - Schlichting turbulent flat-plate boundary layer skin friction + Hoerner form factor drag.
-  - Kirchhoff-Helmholtz non-linear sigmoid stall onset model.
-  - Interactive operating point marker on lift curve and drag polar ($C_l$ vs $C_d$).
-
-- **Data Export:**
-  - One-click CSV export of airfoil geometry coordinates ($x, y_{\text{upper}}, y_{\text{lower}}, y_{\text{camber}}$).
-  - One-click CSV export of surface pressure distribution ($x, C_{p,\text{upper}}, C_{p,\text{lower}}$).
+### 📐 CAD & 3D Printing Export Suite
+- **Native 2D DXF (AutoCAD Release 12):** Clean ASCII DXF with a closed 2D polyline on layer `AIRFOIL_PROFILE`. Directly compatible with **SolidWorks**, **Fusion 360**, **AutoCAD**, **Rhino**, **FreeCAD**, **Bambu Studio / OrcaSlicer**, and laser cutters.
+- **SolidWorks & Fusion 360 XYZ CSV:** Closed-loop 3D spline CSV format (`X, Y, Z` with $Z = 0$) for SolidWorks "Curve Through XYZ Points" and Fusion 360 "Import Spline CSV".
+- **Scale Selector:** Export normalized ($c = 1.0\text{ m}$), Full Scale ($1000\text{ mm}$), Wind Tunnel Model ($200\text{ mm}$), or 3D Printing Test ($150\text{ mm}$).
+- **Surface Pressure Distribution CSV:** Download surface coordinates and local pressure coefficients ($C_p$).
 
 ---
 
@@ -85,7 +81,7 @@ The airfoil boundary is discretized into $N$ planar panels, each carrying a cons
 - **Airfoil Form Factor (Hoerner):**
   $$k_f = 1 + 2\left(\frac{t}{c}\right) + 60\left(\frac{t}{c}\right)^4, \quad C_{d0} = 2 C_f k_f$$
 
-- **Stall Transition:**
+- **Stall Transition (Kirchhoff-Helmholtz Sigmoid Model):**
   $$\sigma(\alpha) = \frac{1}{1 + \exp(-(\alpha - \alpha_{\text{stall}})/\Delta)}$$
   $$C_l(\alpha) = (1 - \sigma(\alpha)) C_{l, \text{linear}} + \sigma(\alpha) [1.8 \sin\alpha \cos\alpha]$$
 
