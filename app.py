@@ -620,23 +620,132 @@ else:
 st.sidebar.markdown("---")
 st.sidebar.markdown("## ✈️ Airfoil Geometry (NACA 4-Digit)")
 
+# Pre-defined famous NACA 4-digit airfoils
+NACA_PRESETS = {
+    "NACA 2412 (General Aviation - Cessna 172/182)": "2412",
+    "NACA 0012 (Symmetric Classic - Rotors, Tails, Fins)": "0012",
+    "NACA 4412 (High-Lift Trainer / STOL Utility)": "4412",
+    "NACA 2415 (Moderate Thickness Transport Wing)": "2415",
+    "NACA 0009 (Thin Aerobatic / Fast Rudder)": "0009",
+    "NACA 0018 (Thick Aerobatic / Cantilever Wing Root)": "0018",
+    "NACA 6412 (High Camber Vintage Glider / Sailplane)": "6412",
+    "NACA 4415 (High Endurance UAV / Motor Glider)": "4415",
+    "NACA 0006 (Supersonic / Thin Stabilizer Fin)": "0006",
+    "NACA 2408 (Thin High-Speed Pylon Racer)": "2408",
+    "NACA 1408 (Low-Drag High-Speed Profile)": "1408",
+    "Custom / Manual Definition": None
+}
+
+# Initialize session state for bidirectional control
+if "m_slider" not in st.session_state:
+    st.session_state.m_slider = 2.0
+if "p_slider" not in st.session_state:
+    st.session_state.p_slider = 40.0
+if "t_slider" not in st.session_state:
+    st.session_state.t_slider = 12.0
+if "naca_text_in" not in st.session_state:
+    st.session_state.naca_text_in = "2412"
+if "naca_preset_choice" not in st.session_state:
+    st.session_state.naca_preset_choice = "NACA 2412 (General Aviation - Cessna 172/182)"
+
+def on_naca_preset_change():
+    selected = st.session_state.naca_preset_choice
+    code = NACA_PRESETS.get(selected)
+    if code:
+        m = float(code[0])
+        p = float(code[1]) * 10.0 if m > 0 else 40.0
+        t = float(code[2:])
+        st.session_state.naca_text_in = code
+        st.session_state.m_slider = m
+        st.session_state.p_slider = p
+        st.session_state.t_slider = t
+
+def on_naca_text_change():
+    raw_code = st.session_state.naca_text_in.strip().upper().replace("NACA", "").replace(" ", "").replace("-", "")
+    if len(raw_code) == 4 and raw_code.isdigit():
+        m = float(raw_code[0])
+        p = float(raw_code[1]) * 10.0 if m > 0 else 40.0
+        t = float(raw_code[2:])
+        t = max(5.0, min(30.0, t))
+        p = max(10.0, min(90.0, p))
+        st.session_state.m_slider = m
+        st.session_state.p_slider = p
+        st.session_state.t_slider = t
+        # Match preset if available
+        matched = False
+        for name, p_code in NACA_PRESETS.items():
+            if p_code == raw_code:
+                st.session_state.naca_preset_choice = name
+                matched = True
+                break
+        if not matched:
+            st.session_state.naca_preset_choice = "Custom / Manual Definition"
+
+def on_naca_slider_change():
+    m = int(round(st.session_state.m_slider))
+    p = int(round(st.session_state.p_slider / 10.0))
+    t = int(round(st.session_state.t_slider))
+    code = f"00{t:02d}" if m == 0 else f"{m}{p}{t:02d}"
+    st.session_state.naca_text_in = code
+    matched = False
+    for name, p_code in NACA_PRESETS.items():
+        if p_code == code:
+            st.session_state.naca_preset_choice = name
+            matched = True
+            break
+    if not matched:
+        st.session_state.naca_preset_choice = "Custom / Manual Definition"
+
+# Airfoil Selector Dropdown
+st.sidebar.selectbox(
+    "Select Airfoil Preset",
+    options=list(NACA_PRESETS.keys()),
+    key="naca_preset_choice",
+    on_change=on_naca_preset_change,
+    help="Quickly load standard NACA 4-digit airfoil profiles used across aviation, UAVs, and motorsport."
+)
+
+# Direct 4-Digit Number Input
+st.sidebar.text_input(
+    "Or Enter 4-Digit NACA Number",
+    key="naca_text_in",
+    on_change=on_naca_text_change,
+    help="Type any 4-digit NACA number (e.g., 2412, 0012, 4415, 6412, 0009). Digits define: 1st=Max Camber %, 2nd=Camber Position tenths, 3rd&4th=Thickness %."
+)
+
+# Real-time digit breakdown feedback
+clean_code = st.session_state.naca_text_in.strip().upper().replace("NACA", "").replace(" ", "").replace("-", "")
+if len(clean_code) == 4 and clean_code.isdigit():
+    m_dec = int(clean_code[0])
+    p_dec = int(clean_code[1]) * 10
+    t_dec = int(clean_code[2:])
+    camber_desc = f"{m_dec}% at {p_dec}% chord" if m_dec > 0 else "0% (Symmetric)"
+    st.sidebar.caption(f"📐 **NACA {clean_code}**: Camber: {camber_desc} | Thickness: {t_dec}%")
+elif len(clean_code) > 0:
+    st.sidebar.caption("⚠️ *Enter exactly 4 digits (e.g. 2412, 0012, 4415)*")
+
+
+st.sidebar.caption("Fine-tune profile geometry parameters:")
+
 m_pct = st.sidebar.slider(
     "Max Camber (m)",
     min_value=0.0,
     max_value=9.0,
-    value=2.0,
     step=0.5,
+    key="m_slider",
     format="%.1f%% chord",
-    help="Maximum height of the camber line."
+    on_change=on_naca_slider_change,
+    help="Maximum height of the camber line as a percentage of chord."
 )
 
 p_pct = st.sidebar.slider(
     "Camber Position (p)",
     min_value=10.0,
     max_value=90.0,
-    value=40.0,
     step=10.0,
+    key="p_slider",
     format="%.0f%% chord",
+    on_change=on_naca_slider_change,
     help="Location of maximum camber along chord from leading edge."
 )
 
@@ -644,11 +753,13 @@ t_pct = st.sidebar.slider(
     "Max Thickness (t)",
     min_value=5.0,
     max_value=30.0,
-    value=12.0,
     step=1.0,
+    key="t_slider",
     format="%.0f%% chord",
-    help="Maximum thickness of the airfoil profile."
+    on_change=on_naca_slider_change,
+    help="Maximum thickness of the airfoil profile as a percentage of chord."
 )
+
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("## 🛩️ High-Lift Plain Flap")
