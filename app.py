@@ -1,85 +1,188 @@
 """
-================================================================================
-🏎️ 2D Airfoil Aerodynamics, Motorsport & CFD Studio
-Built by Senior Aerodynamicist & Streamlit Engineer
-================================================================================
-Features:
-- Parametric NACA 4-Digit Airfoil Geometry Engine (Cosine Spacing)
-- Trailing-Edge Plain Flap Deflection with Real-Time Camber Transformation
-- Motorsport Inverted Wing Mode (Downforce & Aerodynamic Efficiency)
-- Ground Effect Aerodynamics & Venturi Suction Simulation
-- Ultra-Fast 2D Hess-Smith Panel Method & Vectorized CFD Grid Solver
-- Performance/Quality Toggle for High Responsiveness on Streamlit Cloud
-- Normalized Velocity Contours, Streamlines & Stagnation Point Tracking
-- Surface Pressure Distribution (-Cp) with Inverted Aeronautical Convention
-- Non-Linear Viscous Aerodynamic Polars & Stall Modeling
-- CAD & 3D Printing Export: Native 2D DXF (AutoCAD R12) & SolidWorks/Fusion 360 CSV
+Airfoil CFD Studio
+==================
+Interactive 2D airfoil aerodynamics for aeronautics and motorsport.
+
+- Parametric NACA 4-digit geometry (cosine spacing) with plain trailing-edge flap
+- Inverted-wing (downforce) mode and ground-effect simulation
+- Hess-Smith panel method with Kutta condition + vectorised flow-field evaluation
+- Surface pressure (Cp), viscous polars with stall model
+- CAD export: DXF (R12), SolidWorks / Fusion 360 XYZ CSV, coordinate and Cp CSVs
 """
 
-import streamlit as st
-import numpy as np
-import scipy.integrate as integrate
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-from matplotlib.path import Path
 import io
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
+from matplotlib.path import Path
+import numpy as np
+import plotly.graph_objects as go
+import scipy.integrate as integrate
+import streamlit as st
+
 # ------------------------------------------------------------------------------
-# 1. PAGE CONFIGURATION & AERODYNAMIC DASHBOARD STYLING
+# 1. PAGE SETUP & DESIGN SYSTEM
 # ------------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Airfoil CFD Studio & Aerodynamics",
-    page_icon="🏎️",
+    page_title="Airfoil CFD Studio",
+    page_icon=":material/air:",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="auto",
 )
 
-# Custom dark engineering styling
-st.markdown("""
-<style>
-    /* Metric Card Styling */
-    div[data-testid="stMetric"] {
-        background: linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.85) 100%);
-        border: 1px solid rgba(56, 189, 248, 0.28);
-        padding: 12px 16px;
-        border-radius: 12px;
-        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-        backdrop-filter: blur(8px);
-    }
-    div[data-testid="stMetric"]:hover {
-        border-color: rgba(56, 189, 248, 0.65);
-        transition: all 0.3s ease;
-    }
-    div[data-testid="stMetricLabel"] > div {
-        font-size: 0.84rem !important;
-        font-weight: 600 !important;
-        color: #94a3b8 !important;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-    }
-    div[data-testid="stMetricValue"] > div {
-        font-size: 1.75rem !important;
-        font-weight: 800 !important;
-        color: #f8fafc !important;
-        font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    }
-    div[data-testid="stMetricDelta"] > div {
-        font-size: 0.80rem !important;
-    }
+# Palette (kept in sync with .streamlit/config.toml)
+BG = "#0B0D11"
+SURFACE = "#151922"
+BORDER = "#232834"
+GRID = "#1A1F29"
+TEXT = "#E6E8EC"
+MUTED = "#8B93A1"
+ACCENT = "#FF6B2C"
+BLUE = "#4DA3FF"
+RED = "#FF5C6C"
+GREEN = "#3DD68C"
+AMBER = "#F5B83D"
 
-    /* Tabs Aesthetic */
-    button[data-baseweb="tab"] {
-        font-size: 0.98rem !important;
-        font-weight: 600 !important;
-        padding-top: 8px !important;
-        padding-bottom: 8px !important;
-    }
+st.markdown(
+    f"""
+<style>
+:root {{
+    --bg: {BG}; --surface: {SURFACE}; --border: {BORDER};
+    --text: {TEXT}; --muted: {MUTED}; --accent: {ACCENT};
+    --green: {GREEN}; --amber: {AMBER}; --red: {RED}; --blue: {BLUE};
+}}
+
+/* Chrome */
+#MainMenu, footer, [data-testid="stDecoration"] {{ visibility: hidden; height: 0; }}
+header[data-testid="stHeader"] {{ background: transparent; }}
+.block-container {{ padding-top: 2.4rem; padding-bottom: 3rem; max-width: 1360px; }}
+
+/* Sidebar */
+[data-testid="stSidebar"] {{ border-right: 1px solid var(--border); }}
+.brand {{ font-size: 1.05rem; font-weight: 700; letter-spacing: -0.01em; color: var(--text);
+          display: flex; align-items: center; gap: .5rem; margin-bottom: .25rem; }}
+.brand .mark {{ width: 22px; height: 22px; border-radius: 6px; background: var(--accent);
+                display: inline-block; clip-path: polygon(0 70%, 100% 20%, 100% 45%, 0 100%); }}
+.brand-sub {{ font-size: .78rem; color: var(--muted); margin-bottom: .5rem; }}
+.sb-label {{ font-size: .68rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+             font-weight: 600; margin: 1.5rem 0 .35rem; padding-top: 1rem; border-top: 1px solid var(--border); }}
+.sb-label.first {{ border-top: none; padding-top: 0; margin-top: 1rem; }}
+
+/* Hero */
+.eyebrow {{ font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); font-weight: 600; }}
+.hero-title {{ font-size: 2.2rem; font-weight: 700; letter-spacing: -0.025em; color: var(--text);
+               margin: .15rem 0 0; line-height: 1.15; }}
+.chips {{ display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .8rem; }}
+.chip {{ font-size: .78rem; padding: .28rem .65rem; border: 1px solid var(--border); border-radius: 999px;
+         color: var(--muted); background: var(--surface); white-space: nowrap; }}
+.chip b {{ color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }}
+.chip.accent {{ border-color: rgba(255,107,44,.45); color: var(--accent); background: rgba(255,107,44,.08); }}
+
+/* KPI cards */
+.kpis {{ display: grid; gap: .75rem; margin: 1.4rem 0 .6rem; }}
+.kpis.c4 {{ grid-template-columns: repeat(4, minmax(0, 1fr)); }}
+.kpis.c5 {{ grid-template-columns: repeat(5, minmax(0, 1fr)); }}
+.kpis.c3 {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
+.kpis.c1 {{ grid-template-columns: 1fr; margin-top: .4rem; }}
+.legend.stack {{ flex-direction: column; gap: .55rem; margin: .4rem 0 0; }}
+@media (max-width: 1000px) {{ .kpis.c4, .kpis.c5, .kpis.c3 {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
+.kpi {{ background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: .95rem 1.1rem; }}
+.kpi .label {{ font-size: .76rem; color: var(--muted); font-weight: 500; }}
+.kpi .value {{ font-size: 1.6rem; font-weight: 650; color: var(--text); margin-top: .2rem;
+               letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }}
+.kpi .value small {{ font-size: .85rem; color: var(--muted); font-weight: 500; margin-left: .2rem; }}
+.kpi .sub {{ font-size: .78rem; color: var(--muted); margin-top: .15rem; }}
+.kpis.compact .kpi {{ padding: .75rem .95rem; }}
+.kpis.compact .value {{ font-size: 1.2rem; }}
+.dot {{ display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: .35rem; vertical-align: middle; }}
+
+/* Tabs */
+.stTabs [data-baseweb="tab-list"] {{ gap: 1.6rem; border-bottom: 1px solid var(--border); }}
+.stTabs [data-baseweb="tab"] {{ height: 2.7rem; padding: 0 .1rem; font-weight: 500; background: transparent; }}
+
+/* Small helpers */
+.section-title {{ font-size: 1rem; font-weight: 600; color: var(--text); margin: .2rem 0 .1rem; }}
+.section-sub {{ font-size: .84rem; color: var(--muted); margin-bottom: .6rem; }}
+.legend {{ display: flex; flex-wrap: wrap; gap: 1.1rem; font-size: .8rem; color: var(--muted); margin: .3rem 0 0; }}
+.legend .sw {{ display: inline-block; width: 14px; height: 3px; border-radius: 2px; margin-right: .4rem; vertical-align: middle; }}
+.callout {{ border: 1px solid rgba(245,184,61,.35); background: rgba(245,184,61,.07); color: var(--text);
+            border-radius: 10px; padding: .7rem .95rem; font-size: .86rem; margin-top: .8rem; }}
+.foot {{ font-size: .76rem; color: var(--muted); margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--border); }}
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
+
+# Matplotlib base style for the flow-field render
+plt.rcParams.update({
+    "font.family": "sans-serif",
+    "font.sans-serif": ["Inter", "Helvetica Neue", "Arial", "DejaVu Sans"],
+    "font.size": 9,
+    "axes.edgecolor": BORDER,
+    "axes.labelcolor": MUTED,
+    "xtick.color": MUTED,
+    "ytick.color": MUTED,
+    "text.color": TEXT,
+})
+
+# Velocity colormap centred on freestream: slow = blue, freestream = neutral, fast = orange
+VELOCITY_CMAP = LinearSegmentedColormap.from_list(
+    "velocity",
+    [(0.0, "#0B2550"), (0.28, "#2E6BD6"), (0.5, "#262C38"), (0.75, "#F0803A"), (1.0, "#FFE1B0")],
+)
+
+
+def kpi_grid(items, cols=4, compact=False):
+    """Render a row of stat cards. items = [(label, value_html, sub_html), ...]"""
+    cells = "".join(
+        f'<div class="kpi"><div class="label">{label}</div>'
+        f'<div class="value">{value}</div><div class="sub">{sub}</div></div>'
+        for label, value, sub in items
+    )
+    cls = f"kpis c{cols}" + (" compact" if compact else "")
+    st.markdown(f'<div class="{cls}">{cells}</div>', unsafe_allow_html=True)
+
+
+def sb_label(text, first=False):
+    st.sidebar.markdown(f'<div class="sb-label{" first" if first else ""}">{text}</div>', unsafe_allow_html=True)
+
+
+def sci(value):
+    """Format a number as a.bc × 10ⁿ with unicode superscripts."""
+    sup = str.maketrans("0123456789-", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻")
+    exp = int(np.floor(np.log10(abs(value)))) if value else 0
+    return f"{value / 10**exp:.2f} × 10{str(exp).translate(sup)}"
+
+
+def style_plotly(fig, height=400, xtitle="", ytitle=""):
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=height,
+        margin=dict(l=8, r=8, t=36, b=8),
+        font=dict(family="Inter, system-ui, sans-serif", size=12, color=MUTED),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
+                    bgcolor="rgba(0,0,0,0)", font=dict(size=11.5, color=TEXT)),
+        hoverlabel=dict(bgcolor=SURFACE, bordercolor=BORDER, font=dict(color=TEXT, size=12)),
+        hovermode="x unified",
+    )
+    fig.update_layout(legend_traceorder="normal")
+    axis = dict(gridcolor=GRID, zeroline=False, linecolor=BORDER, tickfont=dict(size=11),
+                title_font=dict(size=12, color=MUTED))
+    fig.update_xaxes(title_text=xtitle, **axis)
+    fig.update_yaxes(title_text=ytitle, **axis)
+    return fig
+
+
+PLOTLY_CONFIG = {"displayModeBar": False, "responsive": True}
 
 
 # ------------------------------------------------------------------------------
-# 2. GEOMETRY GENERATOR (NACA 4-DIGIT + FLAP + INVERTED WING)
+# 2-6. PHYSICS: GEOMETRY, PANEL METHOD, FLOW FIELD, AERO MODEL, CAD EXPORT
+#      (unchanged from the original solver)
 # ------------------------------------------------------------------------------
 @st.cache_data
 def generate_airfoil_geometry(m_pct: float, p_pct: float, t_pct: float,
@@ -597,89 +700,63 @@ def generate_cad_xyz_csv(x_coords: np.ndarray, y_coords: np.ndarray, scale: floa
     return out.getvalue()
 
 
+
 # ------------------------------------------------------------------------------
-# 7. SIDEBAR CONTROLS & PERFORMANCE SETTINGS
+# 7. SIDEBAR CONTROLS
 # ------------------------------------------------------------------------------
-st.sidebar.markdown("## ⚡ Performance & Quality")
-perf_mode = st.sidebar.radio(
-    "Rendering Mode",
-    options=["⚡ Fast (Interactive)", "💎 High Def"],
-    index=0,
-    help="Fast mode downsamples the CFD grid and streamline trace for ultra-responsive slider adjustments on Streamlit Cloud."
-)
-
-if "Fast" in perf_mode:
-    grid_nx, grid_ny = 70, 50
-    streamline_density = 0.6
-    fig_dpi = 85
-else:
-    grid_nx, grid_ny = 140, 100
-    streamline_density = 1.1
-    fig_dpi = 115
-
-st.sidebar.markdown("---")
-st.sidebar.markdown("## ✈️ Airfoil Geometry (NACA 4-Digit)")
-
-# Pre-defined famous NACA 4-digit airfoils
 NACA_PRESETS = {
-    "NACA 2412 (General Aviation - Cessna 172/182)": "2412",
-    "NACA 0012 (Symmetric Classic - Rotors, Tails, Fins)": "0012",
-    "NACA 4412 (High-Lift Trainer / STOL Utility)": "4412",
-    "NACA 2415 (Moderate Thickness Transport Wing)": "2415",
-    "NACA 0009 (Thin Aerobatic / Fast Rudder)": "0009",
-    "NACA 0018 (Thick Aerobatic / Cantilever Wing Root)": "0018",
-    "NACA 6412 (High Camber Vintage Glider / Sailplane)": "6412",
-    "NACA 4415 (High Endurance UAV / Motor Glider)": "4415",
-    "NACA 0006 (Supersonic / Thin Stabilizer Fin)": "0006",
-    "NACA 2408 (Thin High-Speed Pylon Racer)": "2408",
-    "NACA 1408 (Low-Drag High-Speed Profile)": "1408",
-    "Custom / Manual Definition": None
+    "NACA 2412 · General aviation": "2412",
+    "NACA 0012 · Symmetric (tails, fins, rotors)": "0012",
+    "NACA 4412 · High-lift trainer / STOL": "4412",
+    "NACA 2415 · Transport wing": "2415",
+    "NACA 0009 · Thin aerobatic": "0009",
+    "NACA 0018 · Thick wing root": "0018",
+    "NACA 6412 · High-camber glider": "6412",
+    "NACA 4415 · Endurance UAV": "4415",
+    "NACA 0006 · Thin stabiliser": "0006",
+    "NACA 2408 · Pylon racer": "2408",
+    "NACA 1408 · Low-drag high-speed": "1408",
+    "Custom": None,
 }
+CUSTOM = "Custom"
 
-# Initialize session state for bidirectional control
-if "m_slider" not in st.session_state:
-    st.session_state.m_slider = 2.0
-if "p_slider" not in st.session_state:
-    st.session_state.p_slider = 40.0
-if "t_slider" not in st.session_state:
-    st.session_state.t_slider = 12.0
-if "naca_text_in" not in st.session_state:
-    st.session_state.naca_text_in = "2412"
-if "naca_preset_choice" not in st.session_state:
-    st.session_state.naca_preset_choice = "NACA 2412 (General Aviation - Cessna 172/182)"
+# Session-state defaults for two-way sync between preset / code / sliders
+st.session_state.setdefault("m_slider", 2.0)
+st.session_state.setdefault("p_slider", 40.0)
+st.session_state.setdefault("t_slider", 12.0)
+st.session_state.setdefault("naca_text_in", "2412")
+st.session_state.setdefault("naca_preset_choice", "NACA 2412 · General aviation")
+if st.session_state.naca_preset_choice not in NACA_PRESETS:
+    st.session_state.naca_preset_choice = CUSTOM
+
+
+def _match_preset(code):
+    for name, p_code in NACA_PRESETS.items():
+        if p_code == code:
+            return name
+    return CUSTOM
+
 
 def on_naca_preset_change():
-    selected = st.session_state.naca_preset_choice
-    code = NACA_PRESETS.get(selected)
+    code = NACA_PRESETS.get(st.session_state.naca_preset_choice)
     if code:
         m = float(code[0])
-        p = float(code[1]) * 10.0 if m > 0 else 40.0
-        t = float(code[2:])
         st.session_state.naca_text_in = code
         st.session_state.m_slider = m
-        st.session_state.p_slider = p
-        st.session_state.t_slider = t
+        st.session_state.p_slider = float(code[1]) * 10.0 if m > 0 else 40.0
+        st.session_state.t_slider = float(code[2:])
+
 
 def on_naca_text_change():
-    raw_code = st.session_state.naca_text_in.strip().upper().replace("NACA", "").replace(" ", "").replace("-", "")
-    if len(raw_code) == 4 and raw_code.isdigit():
-        m = float(raw_code[0])
-        p = float(raw_code[1]) * 10.0 if m > 0 else 40.0
-        t = float(raw_code[2:])
-        t = max(5.0, min(30.0, t))
-        p = max(10.0, min(90.0, p))
+    raw = st.session_state.naca_text_in.strip().upper().replace("NACA", "").replace(" ", "").replace("-", "")
+    if len(raw) == 4 and raw.isdigit():
+        m = float(raw[0])
+        p = float(raw[1]) * 10.0 if m > 0 else 40.0
         st.session_state.m_slider = m
-        st.session_state.p_slider = p
-        st.session_state.t_slider = t
-        # Match preset if available
-        matched = False
-        for name, p_code in NACA_PRESETS.items():
-            if p_code == raw_code:
-                st.session_state.naca_preset_choice = name
-                matched = True
-                break
-        if not matched:
-            st.session_state.naca_preset_choice = "Custom / Manual Definition"
+        st.session_state.p_slider = max(10.0, min(90.0, p))
+        st.session_state.t_slider = max(5.0, min(30.0, float(raw[2:])))
+        st.session_state.naca_preset_choice = _match_preset(raw)
+
 
 def on_naca_slider_change():
     m = int(round(st.session_state.m_slider))
@@ -687,194 +764,103 @@ def on_naca_slider_change():
     t = int(round(st.session_state.t_slider))
     code = f"00{t:02d}" if m == 0 else f"{m}{p}{t:02d}"
     st.session_state.naca_text_in = code
-    matched = False
-    for name, p_code in NACA_PRESETS.items():
-        if p_code == code:
-            st.session_state.naca_preset_choice = name
-            matched = True
-            break
-    if not matched:
-        st.session_state.naca_preset_choice = "Custom / Manual Definition"
-
-# Airfoil Selector Dropdown
-st.sidebar.selectbox(
-    "Select Airfoil Preset",
-    options=list(NACA_PRESETS.keys()),
-    key="naca_preset_choice",
-    on_change=on_naca_preset_change,
-    help="Quickly load standard NACA 4-digit airfoil profiles used across aviation, UAVs, and motorsport."
-)
-
-# Direct 4-Digit Number Input
-st.sidebar.text_input(
-    "Or Enter 4-Digit NACA Number",
-    key="naca_text_in",
-    on_change=on_naca_text_change,
-    help="Type any 4-digit NACA number (e.g., 2412, 0012, 4415, 6412, 0009). Digits define: 1st=Max Camber %, 2nd=Camber Position tenths, 3rd&4th=Thickness %."
-)
-
-# Real-time digit breakdown feedback
-clean_code = st.session_state.naca_text_in.strip().upper().replace("NACA", "").replace(" ", "").replace("-", "")
-if len(clean_code) == 4 and clean_code.isdigit():
-    m_dec = int(clean_code[0])
-    p_dec = int(clean_code[1]) * 10
-    t_dec = int(clean_code[2:])
-    camber_desc = f"{m_dec}% at {p_dec}% chord" if m_dec > 0 else "0% (Symmetric)"
-    st.sidebar.caption(f"📐 **NACA {clean_code}**: Camber: {camber_desc} | Thickness: {t_dec}%")
-elif len(clean_code) > 0:
-    st.sidebar.caption("⚠️ *Enter exactly 4 digits (e.g. 2412, 0012, 4415)*")
+    st.session_state.naca_preset_choice = _match_preset(code)
 
 
-st.sidebar.caption("Fine-tune profile geometry parameters:")
-
-m_pct = st.sidebar.slider(
-    "Max Camber (m)",
-    min_value=0.0,
-    max_value=9.0,
-    step=0.5,
-    key="m_slider",
-    format="%.1f%% chord",
-    on_change=on_naca_slider_change,
-    help="Maximum height of the camber line as a percentage of chord."
-)
-
-p_pct = st.sidebar.slider(
-    "Camber Position (p)",
-    min_value=10.0,
-    max_value=90.0,
-    step=10.0,
-    key="p_slider",
-    format="%.0f%% chord",
-    on_change=on_naca_slider_change,
-    help="Location of maximum camber along chord from leading edge."
-)
-
-t_pct = st.sidebar.slider(
-    "Max Thickness (t)",
-    min_value=5.0,
-    max_value=30.0,
-    step=1.0,
-    key="t_slider",
-    format="%.0f%% chord",
-    on_change=on_naca_slider_change,
-    help="Maximum thickness of the airfoil profile as a percentage of chord."
-)
-
-
-st.sidebar.markdown("---")
-st.sidebar.markdown("## 🛩️ High-Lift Plain Flap")
-
-enable_flap = st.sidebar.checkbox("Enable Trailing-Edge Flap", value=False, help="Adds a plain trailing-edge flap with real-time camber deflection.")
-flap_deflection = 0.0
-flap_hinge = 0.75
-if enable_flap:
-    flap_deflection = st.sidebar.slider(
-        "Flap Deflection Angle (δf)",
-        min_value=-15.0,
-        max_value=35.0,
-        value=15.0,
-        step=1.0,
-        format="%.0f°",
-        help="Downwards deflection angle of the trailing-edge flap."
-    )
-    flap_hinge = st.sidebar.slider(
-        "Hinge Location (xf/c)",
-        min_value=0.60,
-        max_value=0.85,
-        value=0.75,
-        step=0.05,
-        format="%.2f chord",
-        help="Chordwise position of the flap hinge."
+with st.sidebar:
+    st.markdown(
+        '<div class="brand"><span class="mark"></span>Airfoil CFD Studio</div>'
+        '<div class="brand-sub">2D panel-method aerodynamics</div>',
+        unsafe_allow_html=True,
     )
 
-st.sidebar.markdown("---")
-st.sidebar.markdown("## 🏎️ Motorsport Downforce & Ground Effect")
-
-inverted_wing = st.sidebar.checkbox(
-    "Inverted Wing (Downforce Mode)",
-    value=False,
-    help="Inverts the wing profile as used in Formula 1, GT3, and LMP sports car wings to create aerodynamic downforce."
-)
-
-enable_ground_effect = st.sidebar.checkbox(
-    "Simulate Ground Effect",
-    value=False,
-    help="Simulates proximity to the track surface, accelerating flow beneath the wing via the Venturi ground effect."
-)
-
-ground_clearance = 0.30
-if enable_ground_effect:
-    ground_clearance = st.sidebar.slider(
-        "Ground Clearance (h/c)",
-        min_value=0.10,
-        max_value=1.00,
-        value=0.25,
-        step=0.05,
-        format="%.2f chord",
-        help="Distance between the lowest point of the airfoil and the road/track plane."
+    # --- Airfoil -----------------------------------------------------------
+    sb_label("Airfoil", first=True)
+    st.selectbox(
+        "Preset",
+        options=list(NACA_PRESETS.keys()),
+        key="naca_preset_choice",
+        on_change=on_naca_preset_change,
     )
-
-st.sidebar.markdown("---")
-st.sidebar.markdown("## 💨 Operating Flow Conditions")
-
-alpha_deg = st.sidebar.slider(
-    "Angle of Attack (AoA, α)",
-    min_value=-10.0,
-    max_value=20.0,
-    value=4.0,
-    step=0.5,
-    format="%.1f°",
-    help="Angle between oncoming freestream air and chord line."
-)
-
-U_inf = st.sidebar.slider(
-    "Freestream Velocity ($U_\\infty$)",
-    min_value=5.0,
-    max_value=60.0,
-    value=25.0,
-    step=1.0,
-    format="%.0f m/s",
-    help="Magnitude of freestream velocity."
-)
-
-# Constants
-rho_air = 1.225
-nu_air = 1.5e-5
-chord_len = 1.0
-
-with st.sidebar.expander("🎨 Visual Options", expanded=False):
-    cmap_choice = st.selectbox(
-        "Colormap",
-        options=["plasma", "viridis", "turbo", "inferno", "coolwarm"],
-        index=0
+    st.text_input(
+        "NACA 4-digit code",
+        key="naca_text_in",
+        on_change=on_naca_text_change,
+        max_chars=9,
+        help="1st digit = max camber %, 2nd = camber position (tenths of chord), last two = thickness %.",
     )
-    show_wake = st.checkbox("Include Viscous Wake Deficit", value=True)
+    clean_code = st.session_state.naca_text_in.strip().upper().replace("NACA", "").replace(" ", "").replace("-", "")
+    if len(clean_code) == 4 and clean_code.isdigit():
+        m_dec, p_dec, t_dec = int(clean_code[0]), int(clean_code[1]) * 10, int(clean_code[2:])
+        camber_desc = f"{m_dec}% camber at {p_dec}% chord" if m_dec > 0 else "Symmetric"
+        st.caption(f"{camber_desc} · {t_dec}% thick")
+    elif clean_code:
+        st.caption(":orange[Enter exactly 4 digits, e.g. 2412]")
+
+    with st.expander("Fine-tune geometry"):
+        m_pct = st.slider("Max camber", 0.0, 9.0, step=0.5, key="m_slider",
+                          format="%.1f%%", on_change=on_naca_slider_change)
+        p_pct = st.slider("Camber position", 10.0, 90.0, step=10.0, key="p_slider",
+                          format="%.0f%% chord", on_change=on_naca_slider_change)
+        t_pct = st.slider("Thickness", 5.0, 30.0, step=1.0, key="t_slider",
+                          format="%.0f%%", on_change=on_naca_slider_change)
+
+    # --- Flow --------------------------------------------------------------
+    sb_label("Flow conditions")
+    alpha_deg = st.slider("Angle of attack", -10.0, 20.0, 4.0, 0.5, format="%.1f°")
+    U_inf = st.slider("Freestream velocity", 5.0, 60.0, 25.0, 1.0, format="%.0f m/s")
+    st.caption(f"{U_inf * 3.6:.0f} km/h · sea-level air")
+
+    # --- Configuration -----------------------------------------------------
+    sb_label("Configuration")
+    enable_flap = st.toggle("Trailing-edge flap", value=False)
+    flap_deflection, flap_hinge = 0.0, 0.75
+    if enable_flap:
+        flap_deflection = st.slider("Flap deflection", -15.0, 35.0, 15.0, 1.0, format="%.0f°")
+        flap_hinge = st.slider("Hinge position", 0.60, 0.85, 0.75, 0.05, format="%.2f c")
+
+    inverted_wing = st.toggle("Inverted wing (downforce)", value=False,
+                              help="Flip the profile as on a racing car wing so it pushes down instead of up.")
+    enable_ground_effect = st.toggle("Ground effect", value=False,
+                                     help="Add a track surface below the wing and model the Venturi suction under it.")
+    ground_clearance = 0.30
+    if enable_ground_effect:
+        ground_clearance = st.slider("Ground clearance", 0.10, 1.00, 0.25, 0.05, format="%.2f c")
+
+    # --- Display -----------------------------------------------------------
+    sb_label("Display")
+    quality = st.segmented_control("Render quality", ["Fast", "High detail"], default="Fast",
+                                   selection_mode="single")
+    cmap_label = st.selectbox("Colour map", ["Velocity (diverging)", "Turbo", "Viridis", "Plasma", "Inferno"])
+    show_wake = st.toggle("Show viscous wake", value=True)
+
+if quality == "High detail":
+    grid_nx, grid_ny, streamline_density, fig_dpi = 140, 100, 1.1, 150
+else:
+    grid_nx, grid_ny, streamline_density, fig_dpi = 70, 50, 0.65, 110
+
+rho_air, nu_air, chord_len = 1.225, 1.5e-5, 1.0
 
 
 # ------------------------------------------------------------------------------
-# 8. COMPUTATIONAL EXECUTION
+# 8. SOLVE
 # ------------------------------------------------------------------------------
-# 1. Generate unrotated geometry
 xb, yb, xu, yu, xl, yl, xc_line, yc_line, designation = generate_airfoil_geometry(
     m_pct, p_pct, t_pct,
     flap_enabled=enable_flap, flap_deg=flap_deflection, flap_hinge=flap_hinge,
-    inverted=inverted_wing, chord=chord_len, num_points=70
+    inverted=inverted_wing, chord=chord_len, num_points=70,
 )
 
-# 2. Aero performance
 aero = calculate_aero_performance(
     alpha_deg, m_pct, p_pct, t_pct,
     flap_enabled=enable_flap, flap_deg=flap_deflection, flap_hinge=flap_hinge,
     inverted=inverted_wing, ground_effect=enable_ground_effect, ground_h=ground_clearance,
-    U_inf=U_inf, rho=rho_air, nu=nu_air
+    U_inf=U_inf, rho=rho_air, nu=nu_air,
 )
 
-# 3. Rotate airfoil by AoA around quarter-chord (0.25, 0)
+# Rotate by AoA about the quarter chord (inverted wing pitches the other way)
 alpha_rad = np.radians(alpha_deg)
-cos_a = np.cos(alpha_rad)
-sin_a = np.sin(alpha_rad)
-
-# Inverted wing pitches down for positive downforce AoA
+cos_a, sin_a = np.cos(alpha_rad), np.sin(alpha_rad)
 if inverted_wing:
     xb_rot = 0.25 + (xb - 0.25) * cos_a - yb * sin_a
     yb_rot = (xb - 0.25) * sin_a + yb * cos_a
@@ -882,487 +868,365 @@ else:
     xb_rot = 0.25 + (xb - 0.25) * cos_a + yb * sin_a
     yb_rot = -(xb - 0.25) * sin_a + yb * cos_a
 
-# 4. Panel method solution
 panel_res = solve_panel_method(xb_rot, yb_rot, alpha_deg=0.0, U_inf=U_inf)
 
-# 5. Determine ground plane location if active
 ground_y_coord = -0.5
 if enable_ground_effect:
-    lowest_y = np.min(yb_rot)
-    ground_y_coord = lowest_y - ground_clearance
+    ground_y_coord = np.min(yb_rot) - ground_clearance
 
-# 6. Evaluate fast 2D flow field
 Xg, Yg, speed_ratio_2d, u_2d, v_2d, x_te, y_te, downwash_ang = evaluate_flow_field(
     xb_rot, yb_rot, panel_res['q'], panel_res['gamma'], panel_res['L'], panel_res['phi'],
     U_inf=U_inf, alpha_deg=alpha_deg, Cd_val=aero['Cd'],
     nx=grid_nx, ny=grid_ny, enable_wake=show_wake,
-    ground_effect=enable_ground_effect, ground_y=ground_y_coord
+    ground_effect=enable_ground_effect, ground_y=ground_y_coord,
 )
 
-# 7. Stagnation Point location
-xc_rot = panel_res['xc']
-yc_rot = panel_res['yc']
 stag_idx = np.argmax(panel_res['Cp'])
-x_stag = xc_rot[stag_idx]
-y_stag = yc_rot[stag_idx]
+x_stag, y_stag = panel_res['xc'][stag_idx], panel_res['yc'][stag_idx]
 cp_stag = panel_res['Cp'][stag_idx]
 
+# Surface pressure in the body frame (used by the Pressure and Export tabs)
+unrot_res = solve_panel_method(xb, yb, alpha_deg=alpha_deg, U_inf=U_inf)
+xc_unrot, Cp_unrot = unrot_res['xc'], unrot_res['Cp']
+half = (len(xb) - 1) // 2
+sort_u = np.argsort(xc_unrot[:half])
+x_u_s, cp_u_s = xc_unrot[:half][sort_u], Cp_unrot[:half][sort_u]
+sort_l = np.argsort(xc_unrot[half:])
+x_l_s, cp_l_s = xc_unrot[half:][sort_l], Cp_unrot[half:][sort_l]
+cp_l_interp = np.interp(x_u_s, x_l_s, cp_l_s)
+Cn_approx = integrate.trapezoid(cp_l_interp - cp_u_s, x_u_s)
+Cm_c4_approx = integrate.trapezoid((0.25 - x_u_s) * (cp_l_interp - cp_u_s), x_u_s)
+x_cp_approx = (integrate.trapezoid(x_u_s * (cp_l_interp - cp_u_s), x_u_s) / Cn_approx
+               if abs(Cn_approx) > 0.05 else None)
+if x_cp_approx is not None and not (0.0 <= x_cp_approx <= 1.0):
+    x_cp_approx = None  # only meaningful when it lands on the chord
 
-# ------------------------------------------------------------------------------
-# 9. MAIN DASHBOARD: HEADER & METRIC CARDS
-# ------------------------------------------------------------------------------
-header_icon = "🏎️" if inverted_wing else "✈️"
-st.title(f"{header_icon} {designation} CFD & Aerodynamics Studio")
-
-mode_badge = "Motorsport Inverted Wing (Downforce)" if inverted_wing else "Aeronautical Lifting Profile"
-if enable_ground_effect:
-    mode_badge += f" • Ground Effect (h/c = {ground_clearance:.2f})"
-if enable_flap:
-    mode_badge += f" • TE Flap ({flap_deflection:+.0f}°)"
-
-st.markdown(
-    f"**Mode:** `{mode_badge}` &nbsp;|&nbsp; "
-    f"**AoA (α):** `{alpha_deg:+.1f}°` &nbsp;|&nbsp; "
-    f"**Speed ($U_\\infty$):** `{U_inf:.0f} m/s` ({U_inf * 3.6:.0f} km/h) &nbsp;|&nbsp; "
-    f"**Grid:** `{grid_nx}×{grid_ny}` ({perf_mode.split()[1]})"
+# Polars
+alpha_polars = np.linspace(-10.0, 20.0, 31)
+aero_polars = calculate_aero_performance(
+    alpha_polars, m_pct, p_pct, t_pct,
+    flap_enabled=enable_flap, flap_deg=flap_deflection, flap_hinge=flap_hinge,
+    inverted=inverted_wing, ground_effect=enable_ground_effect, ground_h=ground_clearance,
+    U_inf=U_inf, rho=rho_air, nu=nu_air,
 )
 
-# Top Metric Cards
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    if inverted_wing:
-        st.metric(
-            label="Downforce Coeff (C_df)",
-            value=f"{aero['Downforce_Coeff']:+.3f}",
-            delta=f"Downforce: {aero['downforce_val']:.1f} N/m",
-            help="Dimensionless downforce coefficient. Positive produces downforce pressing the vehicle onto the track."
-        )
-    else:
-        st.metric(
-            label="Lift Coefficient (Cl)",
-            value=f"{aero['Cl']:+.3f}",
-            delta=f"Lift: {aero['lift_force']:.1f} N/m",
-            help="Dimensionless lift coefficient per unit span."
-        )
-
-with col2:
-    st.metric(
-        label="Drag Coefficient (Cd)",
-        value=f"{aero['Cd']:.4f}",
-        delta=f"Drag: {aero['drag_force']:.2f} N/m",
-        delta_color="inverse",
-        help="Dimensionless drag coefficient accounting for skin friction, form drag, flap, and separation."
-    )
-
-with col3:
-    eff_val = abs(aero['L_D'])
-    eff_label = "High Efficiency" if eff_val > 40 else ("Moderate" if eff_val > 15 else "High Drag / Stalled")
-    st.metric(
-        label="Aero Efficiency (|L/D|)" if not inverted_wing else "Downforce / Drag (-L/D)",
-        value=f"{eff_val:.1f} : 1",
-        delta=eff_label,
-        help="Ratio of usable vertical aerodynamic force to aerodynamic drag."
-    )
-
-with col4:
-    re_exp = int(np.floor(np.log10(aero['Re'])))
-    re_base = aero['Re'] / (10**re_exp)
-    st.metric(
-        label="Reynolds Number (Re)",
-        value=f"{re_base:.2f} × 10⁶",
-        delta="Motorsport Regime" if inverted_wing else "Subsonic Aero",
-        help=f"Exact Re = {aero['Re']:,.0f}."
-    )
-
-st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
+naca_name = designation.split(" (")[0].split(" [")[0]
+file_stub = designation.replace(" ", "_").replace("(", "").replace(")", "").replace("[", "").replace("]", "").replace("°", "deg")
 
 
 # ------------------------------------------------------------------------------
-# 10. TABS INTERFACE
+# 9. HEADER & KEY RESULTS
 # ------------------------------------------------------------------------------
-tab1, tab2, tab3, tab4 = st.tabs([
-    "🌊 2D CFD Flow Field",
-    "📊 Surface Pressure (-Cp)",
-    "📈 Aerodynamic Polars & Stall",
-    "📚 Aero Physics & Formulas"
+chips = [
+    '<span class="chip accent">Inverted · downforce</span>' if inverted_wing
+    else '<span class="chip">Lifting profile</span>',
+    f'<span class="chip">α <b>{alpha_deg:+.1f}°</b></span>',
+    f'<span class="chip">U∞ <b>{U_inf:.0f} m/s</b></span>',
+    f'<span class="chip">Re <b>{sci(aero["Re"])}</b></span>',
+]
+if enable_flap:
+    chips.append(f'<span class="chip">Flap <b>{flap_deflection:+.0f}°</b> at {flap_hinge:.2f}c</span>')
+if enable_ground_effect:
+    chips.append(f'<span class="chip">Ground <b>h/c {ground_clearance:.2f}</b></span>')
+
+st.markdown(
+    f'<div class="eyebrow">Airfoil analysis</div>'
+    f'<div class="hero-title">{naca_name}</div>'
+    f'<div class="chips">{"".join(chips)}</div>',
+    unsafe_allow_html=True,
+)
+
+stall_margin = aero['alpha_stall_pos'] - alpha_deg
+if stall_margin <= 0:
+    flow_state = f'<span class="dot" style="background:{RED}"></span>Stalled'
+elif stall_margin < 3:
+    flow_state = f'<span class="dot" style="background:{AMBER}"></span>Close to stall'
+else:
+    flow_state = f'<span class="dot" style="background:{GREEN}"></span>Attached flow'
+
+if inverted_wing:
+    force_kpi = ("Downforce coefficient", f"{aero['Downforce_Coeff']:+.3f}",
+                 f"{aero['downforce_val']:,.0f} N per metre span")
+    eff_label = "Downforce / drag"
+else:
+    force_kpi = ("Lift coefficient", f"{aero['Cl']:+.3f}", f"{aero['lift_force']:,.0f} N per metre span")
+    eff_label = "Lift / drag"
+
+kpi_grid([
+    force_kpi,
+    ("Drag coefficient", f"{aero['Cd']:.4f}", f"{aero['drag_force']:,.1f} N per metre span"),
+    (eff_label, f"{abs(aero['L_D']):.1f}", flow_state),
+    ("Stall margin", f"{stall_margin:+.1f}°", f"Stall onset at {aero['alpha_stall_pos']:.1f}°"),
 ])
 
 
-# ==============================================================================
-# TAB 1: 2D CFD FLOW FIELD VISUALIZATION
-# ==============================================================================
-with tab1:
-    plt.style.use('dark_background')
-    fig1, ax1 = plt.subplots(figsize=(10.5, 5.6), dpi=fig_dpi, facecolor='#090d16')
-    ax1.set_facecolor('#090d16')
-    
-    # 1. Background Contours
-    levels = np.linspace(0.0, 1.85, 38)
-    cf = ax1.contourf(Xg, Yg, speed_ratio_2d, levels=levels, cmap=cmap_choice, extend='both')
-    
-    # 2. Horizontal Colorbar
-    cbar = fig1.colorbar(cf, ax=ax1, orientation='horizontal', pad=0.14, fraction=0.046, aspect=36)
-    cbar.set_label(r'Normalized Flow Velocity Magnitude  $|\vec{V}| / U_\infty$', fontsize=10, color='#e2e8f0', fontweight='bold', labelpad=5)
-    cbar.ax.tick_params(colors='#cbd5e1', labelsize=8.5)
-    
-    # 3. Streamlines
-    ax1.streamplot(
-        Xg, Yg, u_2d, v_2d,
-        color=(1.0, 1.0, 1.0, 0.40),
-        density=streamline_density,
-        linewidth=0.75,
-        arrowsize=0.85
-    )
-    
-    # 4. Solid Airfoil Body & Outline
-    ax1.fill(xb_rot, yb_rot, color='#05070c', zorder=10)
-    ax1.plot(xb_rot, yb_rot, color='#38bdf8', lw=2.0, zorder=11, label='Wing Profile')
-    
-    # 5. Stagnation Point
-    ax1.plot(x_stag, y_stag, 'o', color='#ef4444', markersize=7.5, markeredgecolor='white', markeredgewidth=1.6, zorder=15, label='Stagnation Point')
-    ax1.annotate(
-        f'Stagnation (Cp={cp_stag:.2f})',
-        xy=(x_stag, y_stag),
-        xytext=(x_stag - 0.28, y_stag + (0.20 if inverted_wing else -0.22)),
-        arrowprops=dict(facecolor='#ef4444', edgecolor='white', arrowstyle='->', lw=1.2),
-        color='#ffffff', fontsize=8.2, fontweight='semibold',
-        bbox=dict(boxstyle='round,pad=0.3', facecolor='#1e293b', edgecolor='#ef4444', lw=1.0, alpha=0.92),
-        zorder=16
-    )
-    
-    # 6. Boundary Layer Wake Region
-    if show_wake:
-        x_wake = np.linspace(x_te, 1.75, 40)
-        y_wake = y_te - (x_wake - x_te) * np.tan(downwash_ang)
-        ax1.plot(x_wake, y_wake, '--', color='#c084fc', lw=1.2, alpha=0.75, zorder=12, label='Wake Centerline')
-        
-    # 7. Ground Plane (Road Surface)
-    if enable_ground_effect:
-        ax1.fill_between([-0.45, 1.75], -0.75, ground_y_coord, color='#1e293b', hatch='//', alpha=0.9, zorder=14)
-        ax1.plot([-0.45, 1.75], [ground_y_coord, ground_y_coord], color='#f59e0b', lw=2.4, zorder=15, label='Track / Road Surface')
-        ax1.annotate(
-            f'Ground Surface (h/c = {ground_clearance:.2f})',
-            xy=(0.5, ground_y_coord),
-            xytext=(0.35, ground_y_coord - 0.12),
-            color='#fbbf24', fontsize=8.2, fontweight='bold', zorder=16
-        )
-        
-    # Axis bounds & styling
-    ax1.set_xlim(-0.45, 1.75)
-    ax1.set_ylim(-0.75, 0.75)
-    ax1.set_aspect('equal')
-    ax1.set_xlabel('x / c  (Chord Normalized Position)', fontsize=10, color='#cbd5e1', labelpad=3)
-    ax1.set_ylabel('y / c  (Chord Normalized Position)', fontsize=10, color='#cbd5e1', labelpad=3)
-    ax1.tick_params(colors='#94a3b8', labelsize=8.5)
-    for spine in ax1.spines.values():
-        spine.set_color('#334155')
-        
-    ax1.legend(loc='upper right', framealpha=0.88, facecolor='#0f172a', edgecolor='#334155', fontsize=8.2, labelcolor='#e2e8f0')
-    ax1.set_title(
-        f"2D Flow Field Contours & Streamlines ({designation}, α = {alpha_deg:+.1f}°, U∞ = {U_inf:.0f} m/s)",
-        fontsize=11.5, fontweight='bold', color='#f8fafc', pad=10
-    )
-    
-    fig1.subplots_adjust(bottom=0.20, top=0.92, left=0.08, right=0.96)
-    st.pyplot(fig1, clear_figure=True)
-    plt.close('all')
-    
-    if enable_ground_effect:
-        st.success(
-            f"🏎️ **Ground Effect Active:** Flow channel height $h/c = {ground_clearance:.2f}$. "
-            f"Venturi ground suction intensifies under-wing acceleration to **{np.nanmax(speed_ratio_2d):.2f} × $U_\\infty$**, "
-            f"boosting downforce by **+{(aero['ground_factor'] - 1.0) * 100:.1f}%**!"
-        )
+# ------------------------------------------------------------------------------
+# 10. TABS
+# ------------------------------------------------------------------------------
+tab_flow, tab_cp, tab_polars, tab_export, tab_theory = st.tabs(
+    ["Flow field", "Pressure", "Polars", "Export", "Theory"]
+)
 
+# ---- Flow field --------------------------------------------------------------
+with tab_flow:
+    col_plot, col_side = st.columns([3.3, 1], gap="medium")
+    with col_plot:
+        fig1, ax1 = plt.subplots(figsize=(10, 8), dpi=fig_dpi)
+        fig1.patch.set_facecolor(BG)
+        ax1.set_facecolor(BG)
 
-# ==============================================================================
-# TAB 2: SURFACE PRESSURE DISTRIBUTION (-Cp)
-# ==============================================================================
-with tab2:
-    st.markdown("### Surface Pressure Coefficient Distribution ($C_p$)")
-    st.caption("Standard aeronautical convention: Y-axis is inverted so that suction (-Cp) points upward.")
-    
-    # Solve unrotated panel flow for chordwise x/c distribution
-    unrot_res = solve_panel_method(xb, yb, alpha_deg=alpha_deg, U_inf=U_inf)
-    xc_unrot = unrot_res['xc']
-    Cp_unrot = unrot_res['Cp']
-    half = (len(xb) - 1) // 2
-    
-    x_u = xc_unrot[:half]
-    cp_u = Cp_unrot[:half]
-    sort_u = np.argsort(x_u)
-    x_u_s = x_u[sort_u]
-    cp_u_s = cp_u[sort_u]
-    
-    x_l = xc_unrot[half:]
-    cp_l = Cp_unrot[half:]
-    sort_l = np.argsort(x_l)
-    x_l_s = x_l[sort_l]
-    cp_l_s = cp_l[sort_l]
-    
-    cp_l_interp = np.interp(x_u_s, x_l_s, cp_l_s)
-    Cn_approx = integrate.trapezoid(cp_l_interp - cp_u_s, x_u_s)
-    
-    # Center of Pressure (undefined at near-zero lift)
-    if abs(Cn_approx) > 0.05:
-        x_cp_approx = integrate.trapezoid(x_u_s * (cp_l_interp - cp_u_s), x_u_s) / Cn_approx
-        x_cp_display = f"{x_cp_approx:.3f}"
-        x_cp_delta = f"Δ to c/4: {x_cp_approx - 0.25:+.3f}"
-    else:
-        x_cp_display = "N/A"
-        x_cp_delta = "Near Zero Lift"
-        
-    Cm_c4_approx = integrate.trapezoid((0.25 - x_u_s) * (cp_l_interp - cp_u_s), x_u_s)
-    
-    fig2, ax2 = plt.subplots(figsize=(10.0, 4.8), dpi=fig_dpi, facecolor='#090d16')
-    ax2.set_facecolor('#090d16')
-    
-    upper_label = "Upper Surface" if not inverted_wing else "Upper Surface (Pressure Side)"
-    lower_label = "Lower Surface" if not inverted_wing else "Lower Surface (Suction Side)"
-    
-    ax2.plot(x_u_s, cp_u_s, color='#38bdf8', lw=2.2, label=upper_label)
-    ax2.plot(x_l_s, cp_l_s, color='#f43f5e', lw=2.2, label=lower_label)
-    
-    ax2.fill_between(
-        x_u_s, cp_u_s, cp_l_interp,
-        where=(cp_l_interp >= cp_u_s),
-        color='#38bdf8', alpha=0.18,
-        label=r'Net Normal Force Area $\oint \Delta C_p\,d(x/c)$'
-    )
-    
-    ax2.invert_yaxis()
-    
-    min_cp_idx = np.argmin(cp_u_s)
-    ax2.plot(x_u_s[min_cp_idx], cp_u_s[min_cp_idx], 'o', color='#38bdf8', markersize=6.5)
-    ax2.annotate(
-        f'Suction Peak: Cp = {cp_u_s[min_cp_idx]:.2f}',
-        xy=(x_u_s[min_cp_idx], cp_u_s[min_cp_idx]),
-        xytext=(x_u_s[min_cp_idx] + 0.08, cp_u_s[min_cp_idx] - 0.22),
-        arrowprops=dict(facecolor='#38bdf8', edgecolor='white', arrowstyle='->', lw=1.1),
-        color='#ffffff', fontsize=8.2, fontweight='semibold',
-        bbox=dict(boxstyle='round,pad=0.28', facecolor='#0f172a', edgecolor='#38bdf8', alpha=0.9)
-    )
-    
-    ax2.axhline(0.0, color='#64748b', linestyle=':', lw=1.0, alpha=0.7)
-    ax2.axhline(1.0, color='#ef4444', linestyle=':', lw=1.0, alpha=0.7, label='Stagnation Limit (Cp = 1.0)')
-    
-    ax2.set_xlim(-0.02, 1.02)
-    ax2.set_xlabel('Chordwise Position (x / c)', fontsize=10, color='#cbd5e1')
-    ax2.set_ylabel(r'Pressure Coefficient ($C_p$) [Inverted: Suction $\uparrow$]', fontsize=10, color='#cbd5e1')
-    ax2.tick_params(colors='#94a3b8', labelsize=8.5)
-    for spine in ax2.spines.values():
-        spine.set_color('#334155')
-    ax2.grid(True, linestyle='--', color='#1e293b', alpha=0.7)
-    ax2.legend(loc='lower right', framealpha=0.9, facecolor='#0f172a', edgecolor='#334155', fontsize=8.5, labelcolor='#e2e8f0')
-    ax2.set_title(f"Surface Pressure Distribution -Cp for {designation} (α = {alpha_deg:+.1f}°)", fontsize=11, fontweight='bold', color='#f8fafc')
-    
-    plt.tight_layout()
-    st.pyplot(fig2, clear_figure=True)
-    plt.close('all')
-    
-    p_col1, p_col2, p_col3, p_col4 = st.columns(4)
-    with p_col1:
-        st.metric("Minimum Pressure (Peak Suction)", f"{cp_u_s[min_cp_idx]:.2f}", f"at x/c = {x_u_s[min_cp_idx]:.2f}")
-    with p_col2:
-        st.metric("Stagnation Pressure", f"{np.max(Cp_unrot):.2f}", "Theoretical Max: 1.00")
-    with p_col3:
-        st.metric("Center of Pressure (x_cp / c)", x_cp_display, x_cp_delta)
-    with p_col4:
+        levels = np.linspace(0.0, 1.85, 40)
+        if cmap_label.startswith("Velocity"):
+            cf = ax1.contourf(Xg, Yg, speed_ratio_2d, levels=levels, cmap=VELOCITY_CMAP,
+                              norm=TwoSlopeNorm(vmin=0.0, vcenter=1.0, vmax=1.85), extend="both")
+        else:
+            cf = ax1.contourf(Xg, Yg, speed_ratio_2d, levels=levels, cmap=cmap_label.lower(), extend="both")
 
-        st.metric("Pitching Moment (Cm,c/4)", f"{Cm_c4_approx:+.4f}", "Quarter-chord moment")
+        ax1.streamplot(Xg, Yg, u_2d, v_2d, color=(1, 1, 1, 0.32), density=streamline_density,
+                       linewidth=0.6, arrowsize=0.6)
 
+        ax1.fill(xb_rot, yb_rot, color=SURFACE, zorder=10)
+        ax1.plot(xb_rot, yb_rot, color=TEXT, lw=1.3, zorder=11)
+        ax1.plot(x_stag, y_stag, "o", color=ACCENT, markersize=6, markeredgecolor=BG,
+                 markeredgewidth=1.2, zorder=15)
 
-# ==============================================================================
-# TAB 3: AERODYNAMIC POLARS & STALL (CACHED & LAZY-LOADED)
-# ==============================================================================
-with tab3:
-    st.markdown("### Aerodynamic Performance Polars & Non-Linear Stall Modeling")
-    st.caption("Viscous polar curves calculated across angles of attack from -10° to +20°.")
-    
-    # 31-point fast polar evaluation
-    alpha_polars = np.linspace(-10.0, 20.0, 31)
-    aero_polars = calculate_aero_performance(
-        alpha_polars, m_pct, p_pct, t_pct,
-        flap_enabled=enable_flap, flap_deg=flap_deflection, flap_hinge=flap_hinge,
-        inverted=inverted_wing, ground_effect=enable_ground_effect, ground_h=ground_clearance,
-        U_inf=U_inf, rho=rho_air, nu=nu_air
-    )
-    
-    fig3, (ax3a, ax3b) = plt.subplots(1, 2, figsize=(11.5, 4.8), dpi=fig_dpi, facecolor='#090d16')
-    for ax in (ax3a, ax3b):
-        ax.set_facecolor('#090d16')
-        ax.tick_params(colors='#94a3b8', labelsize=8.5)
-        for spine in ax.spines.values():
-            spine.set_color('#334155')
-        ax.grid(True, linestyle='--', color='#1e293b', alpha=0.7)
-        
-    # --- Subplot 1: Cl / Downforce vs Alpha ---
+        if show_wake:
+            x_wake = np.linspace(x_te, 1.75, 40)
+            y_wake = y_te - (x_wake - x_te) * np.tan(downwash_ang)
+            ax1.plot(x_wake, y_wake, "--", color="#C9B6FF", lw=1.0, alpha=0.7, zorder=12)
+
+        if enable_ground_effect:
+            ax1.fill_between([-0.45, 1.75], -0.75, ground_y_coord, color="#12151B", zorder=14)
+            ax1.plot([-0.45, 1.75], [ground_y_coord, ground_y_coord], color=AMBER, lw=1.8, zorder=15)
+
+        ax1.set_xlim(-0.45, 1.75)
+        ax1.set_ylim(-0.75, 0.75)
+        ax1.set_aspect("equal")
+        ax1.set_xlabel("x / c", labelpad=4, fontsize=10.5)
+        ax1.set_ylabel("y / c", labelpad=4, fontsize=10.5)
+        ax1.tick_params(length=0, labelsize=10)
+        for spine in ax1.spines.values():
+            spine.set_visible(False)
+
+        cax = ax1.inset_axes([0.0, -0.13, 1.0, 0.022])
+        cbar = fig1.colorbar(cf, cax=cax, orientation="horizontal", ticks=[0, 0.5, 1.0, 1.5])
+        cbar.outline.set_visible(False)
+        cbar.ax.tick_params(length=0, labelsize=10, colors=MUTED)
+        cbar.set_label("Local speed ÷ freestream speed", fontsize=10.5, color=MUTED, labelpad=4)
+
+        st.pyplot(fig1, clear_figure=True)
+        plt.close("all")
+
+    with col_side:
+        legend_items = [
+            f'<span><span class="dot" style="background:{ACCENT}"></span>Stagnation point (Cp {cp_stag:.2f})</span>',
+            '<span><span class="sw" style="background:rgba(255,255,255,.5)"></span>Streamlines</span>',
+        ]
+        if show_wake:
+            legend_items.append('<span><span class="sw" style="background:#C9B6FF"></span>Wake centreline</span>')
+        if enable_ground_effect:
+            legend_items.append(f'<span><span class="sw" style="background:{AMBER}"></span>Track surface</span>')
+        st.markdown(f'<div class="legend stack">{"".join(legend_items)}</div>', unsafe_allow_html=True)
+
+        kpi_grid([
+            ("Peak local speed", f"{np.nanmax(speed_ratio_2d):.2f}<small>× U∞</small>",
+             f"{np.nanmax(speed_ratio_2d) * U_inf:.1f} m/s"),
+            ("Stagnation point", f"{x_stag:.3f}<small>x/c</small>", "Where the flow splits"),
+            ("Grid", f"{grid_nx} × {grid_ny}", f"{quality or 'Fast'} render"),
+        ], cols=1, compact=True)
+
+        if enable_ground_effect:
+            st.markdown(
+                f'<div class="callout"><b>Ground effect on.</b> The narrowed channel under the wing speeds the flow up to '
+                f'{np.nanmax(speed_ratio_2d):.2f}× freestream, adding '
+                f'<b>{(aero["ground_factor"] - 1.0) * 100:+.1f}%</b> vertical force.</div>',
+                unsafe_allow_html=True,
+            )
+
+# ---- Pressure ----------------------------------------------------------------
+with tab_cp:
+    st.markdown('<div class="section-title">Surface pressure distribution</div>'
+                '<div class="section-sub">Y-axis is flipped (aero convention), so suction points up. '
+                'The shaded gap between the curves is what makes the force.</div>', unsafe_allow_html=True)
+
+    upper_label = "Upper surface" + (" (pressure side)" if inverted_wing else "")
+    lower_label = "Lower surface" + (" (suction side)" if inverted_wing else "")
+    min_cp_idx = int(np.argmin(cp_u_s))
+
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(x=x_u_s, y=cp_l_interp, mode="lines", line=dict(width=0),
+                              showlegend=False, hoverinfo="skip"))
+    fig2.add_trace(go.Scatter(x=x_u_s, y=cp_u_s, mode="lines", name=upper_label,
+                              line=dict(color=BLUE, width=2.4), fill="tonexty",
+                              fillcolor="rgba(77,163,255,0.10)",
+                              hovertemplate="Cp %{y:.3f}<extra>Upper</extra>"))
+    fig2.add_trace(go.Scatter(x=x_l_s, y=cp_l_s, mode="lines", name=lower_label,
+                              line=dict(color=RED, width=2.4),
+                              hovertemplate="Cp %{y:.3f}<extra>Lower</extra>"))
+    fig2.add_trace(go.Scatter(x=[x_u_s[min_cp_idx]], y=[cp_u_s[min_cp_idx]], mode="markers",
+                              name="Peak suction", marker=dict(color=ACCENT, size=9, line=dict(color=BG, width=1.5)),
+                              hovertemplate="Peak suction Cp %{y:.2f}<extra></extra>"))
+    fig2.add_hline(y=0, line=dict(color=BORDER, width=1))
+    fig2.add_hline(y=1, line=dict(color=MUTED, width=1, dash="dot"),
+                   annotation_text="Stagnation (Cp = 1)", annotation_font=dict(size=11, color=MUTED),
+                   annotation_position="bottom right")
+    style_plotly(fig2, height=430, xtitle="Chord position  x / c", ytitle="Pressure coefficient  Cp")
+    fig2.update_yaxes(autorange="reversed")
+    fig2.update_xaxes(range=[-0.02, 1.02])
+    st.plotly_chart(fig2, width="stretch", config=PLOTLY_CONFIG)
+
+    kpi_grid([
+        ("Peak suction", f"{cp_u_s[min_cp_idx]:.2f}", f"at x/c = {x_u_s[min_cp_idx]:.2f}"),
+        ("Stagnation pressure", f"{np.max(Cp_unrot):.2f}", "Theoretical max 1.00"),
+        ("Centre of pressure", f"{x_cp_approx:.3f}<small>x/c</small>" if x_cp_approx is not None else "—",
+         f"{x_cp_approx - 0.25:+.3f} from quarter chord" if x_cp_approx is not None else "Not defined at this load"),
+        ("Pitching moment", f"{Cm_c4_approx:+.4f}", "About the quarter chord"),
+    ], cols=4, compact=True)
+
+# ---- Polars ------------------------------------------------------------------
+with tab_polars:
+    st.markdown('<div class="section-title">Performance polars</div>'
+                '<div class="section-sub">Viscous model with stall, swept from −10° to +20°. '
+                'The orange dot is your current setting.</div>', unsafe_allow_html=True)
+
     y_polar = aero_polars['Cl'] if not inverted_wing else -aero_polars['Cl']
     y_curr = aero['Cl'] if not inverted_wing else aero['Downforce_Coeff']
-    y_label = 'Lift Coefficient (Cl)' if not inverted_wing else 'Downforce Coefficient (C_df)'
-    
-    # Theoretical linear slope
+    y_name = "Lift coefficient  Cl" if not inverted_wing else "Downforce coefficient  Cdf"
+    y_short = "Cl" if not inverted_wing else "Cdf"
     linear_slope = aero['cla_deg'] * (alpha_polars - aero['alpha_0_total'])
     if inverted_wing:
         linear_slope = -linear_slope
-    ax3a.plot(alpha_polars, linear_slope, '--', color='#64748b', lw=1.2, alpha=0.75, label=r'Inviscid Linear Slope')
-    
-    # Viscous curve with stall
-    ax3a.plot(alpha_polars, y_polar, color='#38bdf8', lw=2.4, label='Viscous Curve (Stall Model)')
-    ax3a.axvline(aero['alpha_stall_pos'], color='#f59e0b', linestyle=':', lw=1.5, label=f'Stall Onset ({aero["alpha_stall_pos"]:.1f}°)')
-    ax3a.axhline(0.0, color='#475569', lw=0.8, alpha=0.6)
-    
-    # Current operating point
-    ax3a.plot(alpha_deg, y_curr, 'o', color='#ef4444', markersize=8, markeredgecolor='white', markeredgewidth=1.6,
-              zorder=10, label=f'Operating Point ({y_label.split()[0]}={y_curr:.3f})')
-    
-    ax3a.set_xlim(-10.5, 20.5)
-    ax3a.set_xlabel('Angle of Attack α (°)', fontsize=9.8, color='#cbd5e1')
-    ax3a.set_ylabel(y_label, fontsize=9.8, color='#cbd5e1')
-    ax3a.set_title(f'{y_label} vs α', fontsize=11, fontweight='bold', color='#f8fafc')
-    ax3a.legend(loc='upper left', framealpha=0.9, facecolor='#0f172a', edgecolor='#334155', fontsize=8.2, labelcolor='#e2e8f0')
-    
-    # --- Subplot 2: Drag Polar (Cl vs Cd) ---
-    ax3b.plot(aero_polars['Cd'], y_polar, color='#10b981', lw=2.4, label='Drag Polar')
-    ax3b.plot(aero['Cd'], y_curr, 'o', color='#ef4444', markersize=8, markeredgecolor='white', markeredgewidth=1.6,
-              zorder=10, label=f'Operating Point (Cd = {aero["Cd"]:.4f})')
-    
-    max_ld_idx = np.argmax(np.abs(aero_polars['L_D']))
-    ax3b.plot(aero_polars['Cd'][max_ld_idx], y_polar[max_ld_idx], 's', color='#f59e0b', markersize=6.5,
-              label=f'Max |L/D| = {abs(aero_polars["L_D"][max_ld_idx]):.1f}')
-    
-    ax3b.axhline(0.0, color='#475569', lw=0.8, alpha=0.6)
-    ax3b.set_xlabel('Drag Coefficient (Cd)', fontsize=9.8, color='#cbd5e1')
-    ax3b.set_ylabel(y_label, fontsize=9.8, color='#cbd5e1')
-    ax3b.set_title(f'Drag Polar ({y_label.split()[0]} vs Cd)', fontsize=11, fontweight='bold', color='#f8fafc')
-    ax3b.legend(loc='lower right', framealpha=0.9, facecolor='#0f172a', edgecolor='#334155', fontsize=8.2, labelcolor='#e2e8f0')
-    
-    plt.tight_layout()
-    st.pyplot(fig3, clear_figure=True)
-    plt.close('all')
-    
-    st.markdown("#### Aerodynamic Characteristics Summary")
-    s_col1, s_col2, s_col3, s_col4, s_col5 = st.columns(5)
-    with s_col1:
-        st.metric("Zero-Lift Angle (α_0)", f"{aero['alpha_0_total']:.2f}°", "Theoretical Intercept")
-    with s_col2:
-        st.metric("Lift Slope (dCl/dα)", f"{aero['cla_deg']:.4f} /°", f"{aero['cla_deg']*180/np.pi:.2f} /rad")
-    with s_col3:
-        st.metric("Max Vertical Force", f"{np.max(y_polar):.2f}", f"at α = {alpha_polars[np.argmax(y_polar)]:.1f}°")
-    with s_col4:
-        st.metric("Minimum Drag (Cd,min)", f"{np.min(aero_polars['Cd']):.4f}", f"Cd0 = {aero['Cd0']:.4f}")
-    with s_col5:
-        st.metric("Peak Efficiency", f"{np.max(np.abs(aero_polars['L_D'])):.1f} : 1", f"at α = {alpha_polars[max_ld_idx]:.1f}°")
+    max_ld_idx = int(np.argmax(np.abs(aero_polars['L_D'])))
 
+    col_a, col_b = st.columns(2, gap="medium")
+    with col_a:
+        fig3a = go.Figure()
+        fig3a.add_trace(go.Scatter(x=alpha_polars, y=linear_slope, mode="lines", name="Inviscid (linear)",
+                                   line=dict(color=MUTED, width=1.3, dash="dash"),
+                                   hovertemplate="%{y:.3f}<extra>Linear</extra>"))
+        fig3a.add_trace(go.Scatter(x=alpha_polars, y=y_polar, mode="lines", name="Viscous with stall",
+                                   line=dict(color=BLUE, width=2.6, shape="spline"),
+                                   hovertemplate="%{y:.3f}<extra>Viscous</extra>"))
+        fig3a.add_trace(go.Scatter(x=[alpha_deg], y=[y_curr], mode="markers", name="Current",
+                                   marker=dict(color=ACCENT, size=11, line=dict(color=BG, width=2)),
+                                   hovertemplate="%{y:.3f}<extra>Current</extra>"))
+        fig3a.add_vline(x=aero['alpha_stall_pos'], line=dict(color=AMBER, width=1.2, dash="dot"),
+                        annotation_text=f"Stall {aero['alpha_stall_pos']:.1f}°",
+                        annotation_font=dict(size=11, color=AMBER), annotation_position="top left")
+        style_plotly(fig3a, height=380, xtitle="Angle of attack  α (°)", ytitle=y_name)
+        fig3a.update_xaxes(range=[-10.5, 20.5])
+        st.plotly_chart(fig3a, width="stretch", config=PLOTLY_CONFIG)
 
-# ==============================================================================
-# TAB 4: PHYSICS & MATHEMATICAL FORMULATION
-# ==============================================================================
-with tab4:
-    st.markdown("### Underlying Aerodynamic Theory & Numerical Methods")
-    st.markdown("""
-    #### 1. Parametric Airfoil Geometry & Flap Transformation
-    The profile is generated using the NACA 4-digit analytical equations with cosine distribution along chord $c$:
-    
-    $$\\beta \\in [0, \\pi], \\quad x = \\frac{c}{2}(1 - \\cos\\beta)$$
-    
-    When a plain trailing-edge flap is engaged, all coordinates aft of the hinge $x_h = x_f \\cdot c$ are rotated by flap angle $\\delta_f$ around the hinge point $(x_h, y_c(x_h))$:
-    $$x' = x_h + (x - x_h)\\cos\\delta_f + (y - y_h)\\sin\\delta_f$$
-    $$y' = y_h - (x - x_h)\\sin\\delta_f + (y - y_h)\\cos\\delta_f$$
-    
-    #### 2. Hess-Smith 2D Potential Panel Solver
-    The boundary is discretized into $N$ planar panels with source distribution $q_j$ and global circulation $\\gamma$:
-    - **Flow Tangency Condition**: $\\vec{V}_i \\cdot \\vec{n}_i = 0$ at panel control points.
-    - **Kutta Condition**: Smooth tangential separation at trailing edge $V_{t, 1} + V_{t, N} = 0$.
-    - **Surface Pressure Distribution**: $C_p = 1 - (V_t / U_\\infty)^2$.
-    
-    #### 3. Motorsport Inverted Wing & Ground Effect Aerodynamics
-    - **Inverted Wing Downforce**: The geometry is inverted ($y \\to -y$), shifting the suction peak to the lower surface to generate downward aerodynamic load ($C_L < 0, C_{df} = -C_L$).
-    - **Venturi Ground Effect**: When flying near a road surface ($h/c < 0.6$), the ground plane constricts the under-wing channel, accelerating the flow and deepening the suction peak:
-      $$K_{\\text{ground}} = 1.0 + \\frac{0.12}{(h/c + 0.05)^{0.85}}$$
-      If ground clearance is reduced below the boundary layer blockage threshold ($h/c < 0.12$), diffuser stall occurs.
-    """)
+    with col_b:
+        fig3b = go.Figure()
+        fig3b.add_trace(go.Scatter(x=aero_polars['Cd'], y=y_polar, mode="lines", name="Drag polar",
+                                   line=dict(color=BLUE, width=2.6, shape="spline"),
+                                   customdata=alpha_polars,
+                                   hovertemplate=f"Cd %{{x:.4f}} · {y_short} %{{y:.3f}} · α %{{customdata:.0f}}°<extra></extra>"))
+        fig3b.add_trace(go.Scatter(x=[aero_polars['Cd'][max_ld_idx]], y=[y_polar[max_ld_idx]], mode="markers",
+                                   name=f"Best L/D ({abs(aero_polars['L_D'][max_ld_idx]):.1f})",
+                                   marker=dict(color=AMBER, size=9, symbol="diamond"),
+                                   hovertemplate="Best L/D<extra></extra>"))
+        fig3b.add_trace(go.Scatter(x=[aero['Cd']], y=[y_curr], mode="markers", name="Current",
+                                   marker=dict(color=ACCENT, size=11, line=dict(color=BG, width=2)),
+                                   hovertemplate="Current<extra></extra>"))
+        style_plotly(fig3b, height=380, xtitle="Drag coefficient  Cd", ytitle=y_name)
+        fig3b.update_layout(hovermode="closest")
+        st.plotly_chart(fig3b, width="stretch", config=PLOTLY_CONFIG)
 
+    kpi_grid([
+        ("Zero-lift angle", f"{aero['alpha_0_total']:.2f}°", "Thin-airfoil theory"),
+        ("Lift slope", f"{aero['cla_deg']:.4f}<small>/°</small>", f"{aero['cla_deg'] * 180 / np.pi:.2f} per radian"),
+        ("Max vertical force", f"{np.max(y_polar):.2f}", f"at α = {alpha_polars[np.argmax(y_polar)]:.0f}°"),
+        ("Minimum drag", f"{np.min(aero_polars['Cd']):.4f}", f"Skin friction Cd0 = {aero['Cd0']:.4f}"),
+        ("Best efficiency", f"{np.max(np.abs(aero_polars['L_D'])):.1f}", f"at α = {alpha_polars[max_ld_idx]:.0f}°"),
+    ], cols=5, compact=True)
 
-# ------------------------------------------------------------------------------
-# 11. CAD & 3D PRINTING EXPORT EXPANDER (DXF, SOLIDWORKS, FUSION 360)
-# ------------------------------------------------------------------------------
-with st.expander("💾 CAD & 3D Printing Export (SolidWorks, Fusion 360, DXF, CSV)", expanded=False):
-    st.markdown("Export publication-quality geometry and simulation results directly to CAD, CAM, 3D printers, or laser cutters.")
-    
-    scale_col, unit_col = st.columns([2, 1])
-    with scale_col:
-        scale_mode = st.selectbox(
-            "Export Dimensions / Scale",
-            options=["Normalized (Chord = 1.0 m)", "Full Scale (Chord = 1000 mm)", "Wind Tunnel Model (Chord = 200 mm)", "3D Printing Test (Chord = 150 mm)"],
-            index=1
-        )
-    with unit_col:
-        scale_mult = 1.0
-        unit_label = "m"
-        if "1000 mm" in scale_mode:
-            scale_mult = 1000.0
-            unit_label = "mm"
-        elif "200 mm" in scale_mode:
-            scale_mult = 200.0
-            unit_label = "mm"
-        elif "150 mm" in scale_mode:
-            scale_mult = 150.0
-            unit_label = "mm"
-        st.markdown(f"**Multiplier:** `{scale_mult}× ({unit_label})`")
-        
-    btn_col1, btn_col2 = st.columns(2)
-    
-    # 1. Native 2D DXF Export
+# ---- Export ------------------------------------------------------------------
+with tab_export:
+    st.markdown('<div class="section-title">Export geometry and results</div>'
+                '<div class="section-sub">Ready for SolidWorks, Fusion 360, AutoCAD, slicers and laser cutters. '
+                'Exports use the profile shown, including flap and inversion.</div>', unsafe_allow_html=True)
+
+    SCALES = {
+        "Normalised · chord 1.0 m": (1.0, "m"),
+        "Full scale · chord 1000 mm": (1000.0, "mm"),
+        "Wind-tunnel model · chord 200 mm": (200.0, "mm"),
+        "3D-print test piece · chord 150 mm": (150.0, "mm"),
+    }
+    scale_mode = st.selectbox("Scale", list(SCALES.keys()), index=1)
+    scale_mult, unit_label = SCALES[scale_mode]
+
     dxf_content = generate_dxf_r12(xb, yb, scale=scale_mult, layer="AIRFOIL_PROFILE")
-    with btn_col1:
-        st.download_button(
-            label="📥 Download Native 2D DXF (AutoCAD / SolidWorks / Fusion)",
-            data=dxf_content,
-            file_name=f"{designation.replace(' ', '_')}_{unit_label}.dxf",
-            mime="application/dxf",
-            help="Clean standard ASCII DXF Release 12 closed polyline. Compatible with SolidWorks, Fusion 360, AutoCAD, and laser cutters."
-        )
-        
-    # 2. SolidWorks / Fusion 360 XYZ CSV
     cad_csv_content = generate_cad_xyz_csv(xb, yb, scale=scale_mult)
-    with btn_col2:
-        st.download_button(
-            label="📥 Download SolidWorks / Fusion 360 XYZ CSV",
-            data=cad_csv_content,
-            file_name=f"{designation.replace(' ', '_')}_XYZ_{unit_label}.csv",
-            mime="text/csv",
-            help="Formatted for SolidWorks 'Curve Through XYZ Points' and Fusion 360 'Import Spline CSV'."
-        )
-        
-    btn_col3, btn_col4 = st.columns(2)
-    
-    # 3. Standard Coordinates CSV
+
     csv_coords = io.StringIO()
     csv_coords.write(f"x_{unit_label},y_upper_{unit_label},y_lower_{unit_label},y_camber_{unit_label}\n")
     for i in range(len(xu)):
         csv_coords.write(f"{xu[i]*scale_mult:.6f},{yu[i]*scale_mult:.6f},{yl[i]*scale_mult:.6f},{yc_line[i]*scale_mult:.6f}\n")
-    with btn_col3:
-        st.download_button(
-            label="📥 Download Airfoil Coordinates (CSV)",
-            data=csv_coords.getvalue(),
-            file_name=f"{designation.replace(' ', '_')}_coordinates.csv",
-            mime="text/csv"
-        )
-        
-    # 4. Surface Pressure CSV
+
     csv_cp = io.StringIO()
     csv_cp.write("x_upper,Cp_upper,x_lower,Cp_lower\n")
     for i in range(len(x_u_s)):
         csv_cp.write(f"{x_u_s[i]:.6f},{cp_u_s[i]:.6f},{x_l_s[i]:.6f},{cp_l_s[i]:.6f}\n")
-    with btn_col4:
-        st.download_button(
-            label=f"📥 Download Surface Cp at α={alpha_deg:.1f}° (CSV)",
-            data=csv_cp.getvalue(),
-            file_name=f"{designation.replace(' ', '_')}_Cp_alpha_{alpha_deg:.1f}.csv",
-            mime="text/csv"
-        )
 
-st.markdown("---")
-st.caption("🏎️ Airfoil CFD Studio • High-Speed Streamlit Cloud Optimized • Pure NumPy & SciPy • SolidWorks / Fusion 360 CAD Ready")
+    c1, c2 = st.columns(2, gap="medium")
+    with c1:
+        with st.container(border=True):
+            st.markdown("**CAD profile**")
+            st.caption("Closed outline for sketches, extrusions and cutting.")
+            st.download_button("DXF · AutoCAD R12", data=dxf_content,
+                               file_name=f"{file_stub}_{unit_label}.dxf", mime="application/dxf",
+                               icon=":material/download:", type="primary", width="stretch")
+            st.download_button("XYZ curve CSV · SolidWorks / Fusion", data=cad_csv_content,
+                               file_name=f"{file_stub}_XYZ_{unit_label}.csv", mime="text/csv",
+                               icon=":material/download:", width="stretch")
+    with c2:
+        with st.container(border=True):
+            st.markdown("**Data**")
+            st.caption("Raw numbers for spreadsheets, MATLAB or Python.")
+            st.download_button("Airfoil coordinates CSV", data=csv_coords.getvalue(),
+                               file_name=f"{file_stub}_coordinates.csv", mime="text/csv",
+                               icon=":material/table_chart:", width="stretch")
+            st.download_button(f"Surface Cp at α = {alpha_deg:.1f}° CSV", data=csv_cp.getvalue(),
+                               file_name=f"{file_stub}_Cp_alpha_{alpha_deg:.1f}.csv", mime="text/csv",
+                               icon=":material/table_chart:", width="stretch")
+
+# ---- Theory ------------------------------------------------------------------
+with tab_theory:
+    st.markdown("""
+#### Geometry
+NACA 4-digit equations with cosine spacing along the chord $c$:
+
+$$\\beta \\in [0, \\pi], \\quad x = \\tfrac{c}{2}(1 - \\cos\\beta)$$
+
+With a plain flap, everything aft of the hinge $x_h$ is rotated by $\\delta_f$ about $(x_h, y_c(x_h))$:
+
+$$x' = x_h + (x - x_h)\\cos\\delta_f + (y - y_h)\\sin\\delta_f, \\qquad y' = y_h - (x - x_h)\\sin\\delta_f + (y - y_h)\\cos\\delta_f$$
+
+#### Hess–Smith panel method
+The surface is split into $N$ flat panels, each with a source strength $q_j$, plus one shared vortex strength $\\gamma$.
+
+- **No flow through the surface:** $\\vec{V}_i \\cdot \\vec{n}_i = 0$ at each panel midpoint
+- **Kutta condition:** flow leaves the trailing edge smoothly, $V_{t,1} + V_{t,N} = 0$
+- **Surface pressure:** $C_p = 1 - (V_t / U_\\infty)^2$
+
+#### Viscous model
+Lift follows thin-airfoil theory, blended into a separated-flow model past stall with a sigmoid. Drag combines turbulent flat-plate skin friction, a form factor, profile drag growth with $C_l$, and separation drag.
+
+#### Motorsport: inverted wing and ground effect
+- **Inverted wing:** the profile is mirrored ($y \\to -y$), so suction moves underneath and the wing pushes down ($C_{df} = -C_L$).
+- **Ground effect:** near the track the channel under the wing narrows, speeding up the flow and deepening suction:
+
+$$K_{\\text{ground}} = 1 + \\frac{0.12}{(h/c + 0.05)^{0.85}}$$
+
+Below $h/c \\approx 0.12$ the boundary layer chokes the channel and the gain drops off (diffuser stall).
+
+*This is a fast teaching and concept tool, not a replacement for full RANS CFD or wind-tunnel data.*
+""")
+
+st.markdown(
+    '<div class="foot">Airfoil CFD Studio · Hess–Smith panel method with empirical viscous corrections · '
+    'NumPy, SciPy, Matplotlib, Plotly</div>',
+    unsafe_allow_html=True,
+)
